@@ -33,7 +33,7 @@ loom {
 	splitEnvironmentSourceSets()
 
 	mods {
-		"terrarium" {
+		"tellus" {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
 		}

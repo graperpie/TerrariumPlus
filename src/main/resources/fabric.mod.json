@@ -1,8 +1,8 @@
 {
 	"schemaVersion": 1,
-	"id": "terrarium",
+	"id": "tellus",
 	"version": "${version}",
-	"name": "Terrarium",
+	"name": "Tellus",
 	"description": "This is an example description! Tell everyone what your mod is about!",
 	"authors": [
 		"Me!"
@@ -12,20 +12,20 @@
 		"sources": "https://github.com/FabricMC/fabric-example-mod"
 	},
 	"license": "LGPL-3.0-only",
-	"icon": "assets/terrarium/icon.png",
+	"icon": "assets/tellus/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"com.yucareux.terrariumplus.Terrarium"
+			"com.yucareux.tellus.Tellus"
 		],
 		"client": [
-			"com.yucareux.terrariumplus.TerrariumClient"
+			"com.yucareux.tellus.TellusClient"
 		]
 	},
 	"mixins": [
-		"terrarium.mixins.json",
+		"tellus.mixins.json",
 		{
-			"config": "terrarium.client.mixins.json",
+			"config": "tellus.client.mixins.json",
 			"environment": "client"
 		}
 	],
