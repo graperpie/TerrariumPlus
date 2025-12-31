@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import javax.imageio.ImageIO;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.Mth;
+import org.jspecify.annotations.NonNull;
 
 public final class TellusElevationSource {
 	private static final double EQUATOR_CIRCUMFERENCE = 40075017.0;
@@ -33,13 +34,13 @@ public final class TellusElevationSource {
 	private static final int MAX_CACHE_TILES = intProperty("tellus.elevation.cacheTiles", 512);
 
 	private final Path cacheRoot;
-	private final LoadingCache<TileKey, ShortRaster> cache;
+	private final LoadingCache<@NonNull TileKey, ShortRaster> cache;
 
 	public TellusElevationSource() {
 		this.cacheRoot = FabricLoader.getInstance().getGameDir().resolve("tellus/cache/elevation-tellus");
 		this.cache = CacheBuilder.newBuilder()
 				.maximumSize(MAX_CACHE_TILES)
-				.build(new CacheLoader<>() {
+				.build(new CacheLoader<@NonNull TileKey, ShortRaster>() {
 					@Override
 					public ShortRaster load(TileKey key) throws Exception {
 						return TellusElevationSource.this.loadTile(key);
@@ -181,7 +182,7 @@ public final class TellusElevationSource {
 		return new TileKey(zoom, tileX, tileY);
 	}
 
-	private void prefetchTile(TileKey key) {
+	private void prefetchTile(@NonNull TileKey key) {
 		if (this.cache.getIfPresent(key) != null) {
 			return;
 		}
@@ -204,7 +205,7 @@ public final class TellusElevationSource {
 		}
 	}
 
-	private ShortRaster getTile(TileKey key) {
+	private ShortRaster getTile(@NonNull TileKey key) {
 		try {
 			return this.cache.get(key);
 		} catch (Exception e) {
@@ -213,7 +214,7 @@ public final class TellusElevationSource {
 		}
 	}
 
-	private ShortRaster loadTile(TileKey key) throws IOException {
+	private ShortRaster loadTile(@NonNull TileKey key) throws IOException {
 		Path cachePath = this.cacheRoot.resolve(key.zoom() + "/" + key.x() + "/" + key.y() + ".png");
 		if (Files.exists(cachePath)) {
 			try (InputStream input = Files.newInputStream(cachePath)) {

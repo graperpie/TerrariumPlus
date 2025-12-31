@@ -50,6 +50,10 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 	private static final int WATER_VEG_GRID_SCALE_MAX = 10;
 	private static final int WATER_VEG_SALT = 0x3C6EF35F;
 	private static final int WATER_VEG_SURFACE_OFFSET = 0;
+	private static final int BADLANDS_LOD_BAND_DEPTH = 16;
+	private static final int BADLANDS_LOD_BAND_HEIGHT = 3;
+	private static final int BADLANDS_LOD_SLOPE_DIFF = 3;
+	private static final int LOD_SLOPE_STEP = 4;
 	private final IDhApiLevelWrapper levelWrapper;
 	private final EarthChunkGenerator generator;
 	private final EarthBiomeSource biomeSource;
@@ -109,31 +113,82 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 		final WrapperCache wrappers = wrapperCache.get();
 		final IDhApiBlockStateWrapper waterBlock = wrappers.getBlockState(Blocks.WATER.defaultBlockState());
 		final List<DhApiTerrainDataPoint> columnDataPoints = new ArrayList<>();
+		final int area = lodSizePoints * lodSizePoints;
+		final int[] surfaceYs = new int[area];
+		final int[] waterSurfaces = new int[area];
+		final boolean[] underwaterFlags = new boolean[area];
+		@SuppressWarnings("unchecked")
+		final Holder<Biome>[] biomeHolders = (Holder<Biome>[]) new Holder[area];
 
 		for (int localZ = 0; localZ < lodSizePoints; localZ++) {
 			final int worldZ = baseZ + localZ * cellSize + cellOffset;
 			for (int localX = 0; localX < lodSizePoints; localX++) {
 				final int worldX = baseX + localX * cellSize + cellOffset;
+				final int index = localZ * lodSizePoints + localX;
 				final WaterSurfaceResolver.WaterColumnData waterColumn = generator.resolveLodWaterColumn(worldX, worldZ);
 				final int surfaceY = Mth.clamp(waterColumn.terrainSurface(), minY, maxY - 1);
 				final int waterSurface = Mth.clamp(waterColumn.waterSurface(), minY, maxY - 1);
 				final boolean underwater = waterColumn.hasWater() && waterSurface > surfaceY;
-				final Holder<Biome> biomeHolder = biomeSource.getBiomeAtBlock(worldX, worldZ);
+				surfaceYs[index] = surfaceY;
+				waterSurfaces[index] = waterSurface;
+				underwaterFlags[index] = underwater;
+				biomeHolders[index] = biomeSource.getBiomeAtBlock(worldX, worldZ);
+			}
+		}
+
+		for (int localZ = 0; localZ < lodSizePoints; localZ++) {
+			final int worldZ = baseZ + localZ * cellSize + cellOffset;
+			for (int localX = 0; localX < lodSizePoints; localX++) {
+				final int worldX = baseX + localX * cellSize + cellOffset;
+				final int index = localZ * lodSizePoints + localX;
+				final int surfaceY = surfaceYs[index];
+				final int waterSurface = waterSurfaces[index];
+				final boolean underwater = underwaterFlags[index];
+				final Holder<Biome> biomeHolder = biomeHolders[index];
 				final IDhApiBiomeWrapper biome = wrappers.getBiome(biomeHolder);
 				final EarthChunkGenerator.LodSurface lodSurface =
 						generator.resolveLodSurface(biomeHolder, worldX, worldZ, surfaceY, underwater);
 				final IDhApiBlockStateWrapper fillerBlock = wrappers.getBlockState(lodSurface.filler());
 				final IDhApiBlockStateWrapper topBlock = wrappers.getBlockState(lodSurface.top());
+				final int slopeDiff = lodSlopeDiff(surfaceYs, lodSizePoints, localX, localZ, cellSize);
+				final boolean useBadlandsBands = !underwater
+						&& slopeDiff >= BADLANDS_LOD_SLOPE_DIFF
+						&& biomeHolder.is(BiomeTags.IS_BADLANDS);
 
 				int lastLayerTop = 0;
 				final int surfaceTop = toLayerTop(surfaceY, minY, absoluteTop);
 				final int topLayerBase = Math.max(0, surfaceTop - 1);
-				if (topLayerBase > lastLayerTop) {
-					columnDataPoints.add(DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, topLayerBase, fillerBlock, biome));
+				if (useBadlandsBands) {
+					int bandDepth = Math.min(BADLANDS_LOD_BAND_DEPTH, surfaceY - minY + 1);
+					int bandBottomY = Math.max(minY, surfaceY - bandDepth + 1);
+					int bandBottomLayer = toLayerTop(bandBottomY, minY, absoluteTop);
+					if (bandBottomLayer > lastLayerTop) {
+						columnDataPoints.add(
+								DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, bandBottomLayer, fillerBlock, biome)
+						);
+						lastLayerTop = bandBottomLayer;
+					}
+					while (lastLayerTop < topLayerBase) {
+						int segmentTop = Math.min(topLayerBase, lastLayerTop + BADLANDS_LOD_BAND_HEIGHT);
+						int bandY = minY + segmentTop - 1;
+						IDhApiBlockStateWrapper bandBlock = wrappers.getBlockState(
+								generator.resolveBadlandsBandBlock(worldX, worldZ, bandY)
+						);
+						columnDataPoints.add(
+								DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, segmentTop, bandBlock, biome)
+						);
+						lastLayerTop = segmentTop;
+					}
+				} else if (topLayerBase > lastLayerTop) {
+					columnDataPoints.add(
+							DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, topLayerBase, fillerBlock, biome)
+					);
 					lastLayerTop = topLayerBase;
 				}
 				if (surfaceTop > lastLayerTop) {
-					columnDataPoints.add(DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, surfaceTop, topBlock, biome));
+					columnDataPoints.add(
+							DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, surfaceTop, topBlock, biome)
+					);
 					lastLayerTop = surfaceTop;
 				}
 
@@ -222,6 +277,21 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 
 	private static int toLayerTop(final int inclusiveTopY, final int minY, final int absoluteTop) {
 		return Mth.clamp(inclusiveTopY - minY + 1, 0, absoluteTop);
+	}
+
+	private static int lodSlopeDiff(int[] surfaceYs, int gridSize, int x, int z, int cellSize) {
+		int index = z * gridSize + x;
+		int center = surfaceYs[index];
+		int east = surfaceYs[z * gridSize + Math.min(gridSize - 1, x + 1)];
+		int west = surfaceYs[z * gridSize + Math.max(0, x - 1)];
+		int north = surfaceYs[Math.max(0, z - 1) * gridSize + x];
+		int south = surfaceYs[Math.min(gridSize - 1, z + 1) * gridSize + x];
+		int maxDiff = Math.max(
+				Math.max(Math.abs(east - center), Math.abs(west - center)),
+				Math.max(Math.abs(north - center), Math.abs(south - center))
+		);
+		int scaledStep = Math.max(1, cellSize);
+		return (maxDiff * LOD_SLOPE_STEP) / scaledStep;
 	}
 
 	private void prefetchLodResources(

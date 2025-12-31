@@ -104,6 +104,19 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 	private static final int SLOPE_SAMPLE_STEP = 4;
 	private static final int STONY_SLOPE_DIFF = 3;
 	private static final int SNOW_SLOPE_DIFF = 4;
+	private static final int BADLANDS_BAND_SLOPE_DIFF = 3;
+	private static final int BADLANDS_BAND_HEIGHT = 3;
+	private static final int BADLANDS_BAND_DEPTH = 16;
+	private static final int BADLANDS_BAND_OFFSET_CELL = 32;
+	private static final @NonNull BlockState[] BADLANDS_BANDS = {
+			Blocks.TERRACOTTA.defaultBlockState(),
+			Blocks.ORANGE_TERRACOTTA.defaultBlockState(),
+			Blocks.YELLOW_TERRACOTTA.defaultBlockState(),
+			Blocks.BROWN_TERRACOTTA.defaultBlockState(),
+			Blocks.RED_TERRACOTTA.defaultBlockState(),
+			Blocks.LIGHT_GRAY_TERRACOTTA.defaultBlockState(),
+			Blocks.WHITE_TERRACOTTA.defaultBlockState()
+	};
 	private static final int CINEMATIC_MAX_WATER_DEPTH = 16;
 	private static final int CARVER_RANGE = 8;
 	private static final int NOISE_CAVE_MIN_ROOF = 8;
@@ -751,29 +764,6 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 			int minY,
 			int maxYExclusive,
 			int coverClass,
-			WaterSurfaceResolver.WaterChunkData waterData
-	) {
-		return resolveColumnHeights(
-				worldX,
-				worldZ,
-				localX,
-				localZ,
-				minY,
-				maxYExclusive,
-				coverClass,
-				waterData,
-				Integer.MIN_VALUE
-		);
-	}
-
-	private ColumnHeights resolveColumnHeights(
-			int worldX,
-			int worldZ,
-			int localX,
-			int localZ,
-			int minY,
-			int maxYExclusive,
-			int coverClass,
 			WaterSurfaceResolver.WaterChunkData waterData,
 			int cachedSurface
 	) {
@@ -845,29 +835,6 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 			int worldZ,
 			int surface,
 			int minY,
-			RandomState random,
-			boolean underwater
-	) {
-		if (surface < minY) {
-			return;
-		}
-		Holder<Biome> biome = this.biomeSource.getNoiseBiome(
-				QuartPos.fromBlock(worldX),
-				QuartPos.fromBlock(surface),
-				QuartPos.fromBlock(worldZ),
-				random.sampler()
-		);
-		int slopeDiff = sampleSlopeDiff(worldX, worldZ, surface);
-		applySurface(chunk, cursor, worldX, worldZ, surface, minY, underwater, biome, slopeDiff);
-	}
-
-	private void applySurface(
-			ChunkAccess chunk,
-			BlockPos.MutableBlockPos cursor,
-			int worldX,
-			int worldZ,
-			int surface,
-			int minY,
 			boolean underwater,
 			Holder<Biome> biome,
 			int slopeDiff
@@ -879,6 +846,10 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 		if (palette == null) {
 			return;
 		}
+		if (!underwater && biome.is(BiomeTags.IS_BADLANDS) && slopeDiff >= BADLANDS_BAND_SLOPE_DIFF) {
+			applyBadlandsBands(chunk, cursor, worldX, worldZ, surface, minY, palette);
+			return;
+		}
 		@NonNull BlockState top = underwater ? palette.underwaterTop() : palette.top();
 		@NonNull BlockState filler = palette.filler();
 		int depth = palette.depth();
@@ -888,6 +859,40 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 			cursor.set(worldX, y, worldZ);
 			chunk.setBlockState(cursor, y == surface ? top : filler);
 		}
+	}
+
+	private static void applyBadlandsBands(
+			ChunkAccess chunk,
+			BlockPos.MutableBlockPos cursor,
+			int worldX,
+			int worldZ,
+			int surface,
+			int minY,
+			SurfacePalette palette
+	) {
+		int depth = Math.max(palette.depth(), BADLANDS_BAND_DEPTH);
+		int bottom = Math.max(minY, surface - depth + 1);
+		int offset = badlandsBandOffset(worldX, worldZ);
+		@NonNull BlockState top = palette.top();
+		for (int y = surface; y >= bottom; y--) {
+			cursor.set(worldX, y, worldZ);
+			@NonNull BlockState state = y == surface ? top : badlandsBand(y, offset);
+			chunk.setBlockState(cursor, state);
+		}
+	}
+
+	private static int badlandsBandOffset(int worldX, int worldZ) {
+		int cellX = Math.floorDiv(worldX, BADLANDS_BAND_OFFSET_CELL);
+		int cellZ = Math.floorDiv(worldZ, BADLANDS_BAND_OFFSET_CELL);
+		long seed = seedFromCoords(cellX, 2, cellZ) ^ 0x2E2B9E9B4A7C15L;
+		int range = BADLANDS_BAND_HEIGHT * BADLANDS_BANDS.length;
+		return Math.floorMod((int) seed, range);
+	}
+
+	private static @NonNull BlockState badlandsBand(int y, int offset) {
+		int index = Math.floorDiv(y + offset, BADLANDS_BAND_HEIGHT);
+		int bandIndex = Math.floorMod(index, BADLANDS_BANDS.length);
+		return BADLANDS_BANDS[bandIndex];
 	}
 
 	private @NonNull BlockState resolveSurfaceTop(
@@ -966,6 +971,11 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 		int waterSurface = Math.max(surface + 1, this.seaLevel);
 		boolean isOcean = coverClass == ESA_NO_DATA;
 		return new WaterSurfaceResolver.WaterColumnData(true, isOcean, surface, waterSurface);
+	}
+
+	public @NonNull BlockState resolveBadlandsBandBlock(int worldX, int worldZ, int y) {
+		int offset = badlandsBandOffset(worldX, worldZ);
+		return badlandsBand(y, offset);
 	}
 
 	private SurfacePalette selectSurfacePalette(Holder<Biome> biome, int worldX, int worldZ, int surface, boolean underwater) {
@@ -1284,16 +1294,6 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 			return this.settings.addTrailRuins();
 		}
 		return true;
-	}
-
-	private boolean isFrozenPeaksColumn(RandomState randomState, int worldX, int worldZ, int surface) {
-		Holder<Biome> biome = this.biomeSource.getNoiseBiome(
-				QuartPos.fromBlock(worldX),
-				QuartPos.fromBlock(surface),
-				QuartPos.fromBlock(worldZ),
-				randomState.sampler()
-		);
-		return biome.is(Biomes.FROZEN_PEAKS);
 	}
 
 	private boolean isFrozenPeaksChunk(ChunkPos pos, RandomState randomState) {

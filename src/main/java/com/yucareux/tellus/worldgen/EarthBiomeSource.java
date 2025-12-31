@@ -84,7 +84,7 @@ public final class EarthBiomeSource extends BiomeSource {
 	}
 
 	private @NonNull Holder<Biome> resolveBiomeAtBlock(int blockX, int blockZ) {
-		int coverClass = LAND_COVER_SOURCE.sampleSmoothedCoverClass(blockX, blockZ, this.settings.worldScale());
+		int coverClass = LAND_COVER_SOURCE.sampleCoverClass(blockX, blockZ, this.settings.worldScale());
 
 		if (coverClass == ESA_SNOW_ICE) {
 			return this.frozenPeaks;

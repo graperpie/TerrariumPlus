@@ -51,10 +51,11 @@ final class TellusWorldgenSources {
 
 	static @NonNull WaterSurfaceResolver waterResolver(EarthGeneratorSettings settings) {
 		Objects.requireNonNull(settings, "settings");
-		return WATER_RESOLVERS.computeIfAbsent(
+		WaterSurfaceResolver resolver = WATER_RESOLVERS.computeIfAbsent(
 				settings,
 				value -> new WaterSurfaceResolver(LAND_COVER, ELEVATION, value)
 		);
+		return Objects.requireNonNull(resolver, "waterResolver");
 	}
 
 	static void prefetchForChunk(ChunkPos pos, EarthGeneratorSettings settings) {
