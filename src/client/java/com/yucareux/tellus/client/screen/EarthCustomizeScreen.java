@@ -403,6 +403,10 @@ public class EarthCustomizeScreen extends Screen {
 		boolean addAncientCities = false;
 		boolean addTrialChambers = false;
 		boolean addTrailRuins = this.findToggleValue("add_trail_ruins", true);
+		boolean distantHorizonsWaterResolver = this.findToggleValue(
+				"distant_horizons_water_resolver",
+				EarthGeneratorSettings.DEFAULT.distantHorizonsWaterResolver()
+		);
 		EarthGeneratorSettings.DistantHorizonsRenderMode renderMode = this.findRenderMode(
 				"distant_horizons_render_mode",
 				EarthGeneratorSettings.DEFAULT.distantHorizonsRenderMode()
@@ -444,6 +448,7 @@ public class EarthCustomizeScreen extends Screen {
 				addAncientCities,
 				addTrialChambers,
 				addTrailRuins,
+				distantHorizonsWaterResolver,
 				renderMode
 		);
 	}
@@ -509,7 +514,8 @@ public class EarthCustomizeScreen extends Screen {
 						.withDisplay(EarthCustomizeScreen::formatSeaLevel),
 				slider("max_altitude", AUTO_MAX_ALTITUDE, AUTO_MAX_ALTITUDE, EarthGeneratorSettings.MAX_WORLD_Y, 16.0)
 						.withDisplay(EarthCustomizeScreen::formatMaxAltitude),
-				slider("min_altitude", AUTO_MIN_ALTITUDE, AUTO_MIN_ALTITUDE, EarthGeneratorSettings.MAX_WORLD_Y, 16.0)
+				slider("min_altitude", EarthGeneratorSettings.DEFAULT.minAltitude(),
+						AUTO_MIN_ALTITUDE, EarthGeneratorSettings.MAX_WORLD_Y, 16.0)
 						.withDisplay(EarthCustomizeScreen::formatMinAltitude),
 				slider("terrain_smoothing", 25.0, 0.0, 100.0, 5.0)
 						.withDisplay(EarthCustomizeScreen::formatPercent)
@@ -571,6 +577,7 @@ public class EarthCustomizeScreen extends Screen {
 
 		categories.add(new CategoryDefinition("compatibility", List.of(
 				mode("distant_horizons_render_mode", EarthGeneratorSettings.DEFAULT.distantHorizonsRenderMode()),
+				toggle("distant_horizons_water_resolver", EarthGeneratorSettings.DEFAULT.distantHorizonsWaterResolver()),
 				comingSoonButton()
 		)));
 

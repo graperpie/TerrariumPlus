@@ -30,11 +30,12 @@ public class EarthSpawnpointScreen extends Screen {
 			this.mapWidget.close();
 		}
 
-		int mapX = 20;
-		int mapY = 20;
-		int mapWidth = this.width - 40;
-		int mapHeight = this.height - 60;
+		int mapX = 0;
+		int mapY = 0;
+		int mapWidth = this.width;
+		int mapHeight = this.height;
 		this.mapWidget = new SlippyMapWidget(mapX, mapY, mapWidth, mapHeight);
+		this.mapWidget.setAttributionBottomPadding(28);
 
 		double latitude = this.parent.getSpawnLatitude();
 		double longitude = this.parent.getSpawnLongitude();
@@ -43,11 +44,10 @@ public class EarthSpawnpointScreen extends Screen {
 		this.mapWidget.getMap().focus(latitude, longitude, 4);
 
 		Geocoder geocoder = new NominatimGeocoder();
-		this.searchWidget = new PlaceSearchWidget(mapX + 5, mapY + 5, 200, 20, geocoder, this::handleSearch);
+		this.searchWidget = new PlaceSearchWidget(mapX + 12, mapY + 12, 220, 20, geocoder, this::handleSearch);
 
 		this.addRenderableOnly(this.mapWidget);
 		this.addRenderableWidget(this.searchWidget);
-		this.addWidget(this.mapWidget);
 
 		int buttonY = this.height - 28;
 		this.addRenderableWidget(Button.builder(Component.translatable("gui.done"), button -> {
@@ -61,6 +61,8 @@ public class EarthSpawnpointScreen extends Screen {
 		this.addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), button -> {
 			this.minecraft.setScreen(this.parent);
 		}).bounds(this.width / 2 + 4, buttonY, 150, 20).build());
+
+		this.addWidget(this.mapWidget);
 	}
 
 	@Override

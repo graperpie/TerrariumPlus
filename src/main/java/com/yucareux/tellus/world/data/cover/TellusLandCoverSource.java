@@ -12,6 +12,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -509,7 +510,16 @@ public final class TellusLandCoverSource {
 			long offset = this.tileOffsets[tileIndex];
 			int length = this.tileByteCounts[tileIndex];
 			byte[] compressed = new byte[length];
-			readFully(this.channel, compressed, offset);
+			try {
+				readFully(this.channel, compressed, offset);
+			} catch (ClosedChannelException e) {
+				if (this.path == null) {
+					throw e;
+				}
+				try (FileChannel reopened = FileChannel.open(this.path, StandardOpenOption.READ)) {
+					readFully(reopened, compressed, offset);
+				}
+			}
 			return inflate(compressed, this.tileWidth * this.tileHeight);
 		}
 

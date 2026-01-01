@@ -52,6 +52,7 @@ public record EarthGeneratorSettings(
 		boolean addAncientCities,
 		boolean addTrialChambers,
 		boolean addTrailRuins,
+		boolean distantHorizonsWaterResolver,
 		DistantHorizonsRenderMode distantHorizonsRenderMode
 ) {
 	public static final double DEFAULT_SPAWN_LATITUDE = 27.9881;
@@ -76,8 +77,8 @@ public record EarthGeneratorSettings(
 			AUTO_SEA_LEVEL,
 			DEFAULT_SPAWN_LATITUDE,
 			DEFAULT_SPAWN_LONGITUDE,
+			-64,
 			AUTO_ALTITUDE,
-			AUTO_ALTITUDE,
 			false,
 			true,
 			true,
@@ -105,6 +106,7 @@ public record EarthGeneratorSettings(
 			false,
 			false,
 			true,
+			false,
 			DistantHorizonsRenderMode.FAST
 	);
 
@@ -135,6 +137,9 @@ public record EarthGeneratorSettings(
 	private static final MapCodec<DistantHorizonsRenderMode> DISTANT_HORIZONS_RENDER_MODE_CODEC =
 			DistantHorizonsRenderMode.CODEC.fieldOf("distant_horizons_render_mode")
 					.orElse(DEFAULT.distantHorizonsRenderMode());
+
+	private static final MapCodec<Boolean> DISTANT_HORIZONS_WATER_RESOLVER_CODEC =
+			Codec.BOOL.fieldOf("distant_horizons_water_resolver").orElse(DEFAULT.distantHorizonsWaterResolver());
 
 	private static final MapCodec<Boolean> GEODES_CODEC =
 			Codec.BOOL.fieldOf("geodes").orElse(DEFAULT.geodes());
@@ -174,6 +179,7 @@ public record EarthGeneratorSettings(
 							: Optional.of(input.seaLevel());
 					builder = SEA_LEVEL_CODEC.encode(seaLevel, ops, builder);
 					builder = DISTANT_HORIZONS_RENDER_MODE_CODEC.encode(input.distantHorizonsRenderMode(), ops, builder);
+					builder = DISTANT_HORIZONS_WATER_RESOLVER_CODEC.encode(input.distantHorizonsWaterResolver(), ops, builder);
 					builder = GEODES_CODEC.encode(input.geodes(), ops, builder);
 					builder = LAVA_POOLS_CODEC.encode(input.lavaPools(), ops, builder);
 					builder = STRUCTURE_CODEC.encode(StructureSettings.fromSettings(input), ops, builder);
@@ -184,6 +190,7 @@ public record EarthGeneratorSettings(
 				public <T> Stream<T> keys(DynamicOps<T> ops) {
 					Stream<T> baseKeys = Stream.concat(BASE_CODEC.keys(ops), SEA_LEVEL_CODEC.keys(ops));
 					baseKeys = Stream.concat(baseKeys, DISTANT_HORIZONS_RENDER_MODE_CODEC.keys(ops));
+					baseKeys = Stream.concat(baseKeys, DISTANT_HORIZONS_WATER_RESOLVER_CODEC.keys(ops));
 					baseKeys = Stream.concat(baseKeys, GEODES_CODEC.keys(ops));
 					baseKeys = Stream.concat(baseKeys, LAVA_POOLS_CODEC.keys(ops));
 					Stream<T> structureKeys = Stream.concat(baseKeys, STRUCTURE_CODEC.keys(ops));
@@ -197,6 +204,8 @@ public record EarthGeneratorSettings(
 					DataResult<Optional<Integer>> seaLevel = SEA_LEVEL_CODEC.decode(ops, input);
 					DataResult<DistantHorizonsRenderMode> distantHorizonsRenderMode =
 							DISTANT_HORIZONS_RENDER_MODE_CODEC.decode(ops, input);
+					DataResult<Boolean> distantHorizonsWaterResolver =
+							DISTANT_HORIZONS_WATER_RESOLVER_CODEC.decode(ops, input);
 					DataResult<Boolean> geodes = GEODES_CODEC.decode(ops, input);
 					DataResult<Boolean> lavaPools = LAVA_POOLS_CODEC.decode(ops, input);
 					DataResult<StructureSettings> structures = STRUCTURE_CODEC.decode(ops, input);
@@ -206,7 +215,11 @@ public record EarthGeneratorSettings(
 							EarthGeneratorSettings::applyDistantHorizonsRenderMode,
 							distantHorizonsRenderMode
 					);
-					DataResult<SettingsBase> withGeodes = withRenderMode.apply2(EarthGeneratorSettings::applyGeodes, geodes);
+					DataResult<SettingsBase> withWaterResolver = withRenderMode.apply2(
+							EarthGeneratorSettings::applyDistantHorizonsWaterResolver,
+							distantHorizonsWaterResolver
+					);
+					DataResult<SettingsBase> withGeodes = withWaterResolver.apply2(EarthGeneratorSettings::applyGeodes, geodes);
 					DataResult<EarthGeneratorSettings> settings = withGeodes.apply2(EarthGeneratorSettings::applyLavaPools, lavaPools);
 					settings = settings.apply2(EarthGeneratorSettings::withStructureSettings, structures);
 					return settings.apply2(EarthGeneratorSettings::applyTrailRuins, trailRuins);
@@ -216,6 +229,7 @@ public record EarthGeneratorSettings(
 				public <T> Stream<T> keys(DynamicOps<T> ops) {
 					Stream<T> baseKeys = Stream.concat(BASE_CODEC.keys(ops), SEA_LEVEL_CODEC.keys(ops));
 					baseKeys = Stream.concat(baseKeys, DISTANT_HORIZONS_RENDER_MODE_CODEC.keys(ops));
+					baseKeys = Stream.concat(baseKeys, DISTANT_HORIZONS_WATER_RESOLVER_CODEC.keys(ops));
 					baseKeys = Stream.concat(baseKeys, GEODES_CODEC.keys(ops));
 					baseKeys = Stream.concat(baseKeys, LAVA_POOLS_CODEC.keys(ops));
 					Stream<T> structureKeys = Stream.concat(baseKeys, STRUCTURE_CODEC.keys(ops));
@@ -313,6 +327,7 @@ public record EarthGeneratorSettings(
 				Objects.requireNonNull(dripstone, "dripstone").booleanValue(),
 				Objects.requireNonNull(deepDark, "deepDark").booleanValue(),
 				Objects.requireNonNull(oreDistribution, "oreDistribution").booleanValue(),
+				DEFAULT.distantHorizonsWaterResolver(),
 				DEFAULT.distantHorizonsRenderMode(),
 				DEFAULT.geodes()
 		);
@@ -336,6 +351,7 @@ public record EarthGeneratorSettings(
 			boolean dripstone,
 			boolean deepDark,
 			boolean oreDistribution,
+			boolean distantHorizonsWaterResolver,
 			DistantHorizonsRenderMode distantHorizonsRenderMode,
 			boolean geodes
 	) {
@@ -358,6 +374,7 @@ public record EarthGeneratorSettings(
 					settings.dripstone(),
 					settings.deepDark(),
 					settings.oreDistribution(),
+					settings.distantHorizonsWaterResolver(),
 					settings.distantHorizonsRenderMode(),
 					settings.geodes()
 			);
@@ -382,6 +399,7 @@ public record EarthGeneratorSettings(
 					this.dripstone,
 					this.deepDark,
 					this.oreDistribution,
+					this.distantHorizonsWaterResolver,
 					this.distantHorizonsRenderMode,
 					this.geodes
 			);
@@ -406,8 +424,34 @@ public record EarthGeneratorSettings(
 					this.dripstone,
 					this.deepDark,
 					this.oreDistribution,
+					this.distantHorizonsWaterResolver,
 					this.distantHorizonsRenderMode,
 					geodes
+			);
+		}
+
+		private SettingsBase withDistantHorizonsWaterResolver(boolean enabled) {
+			return new SettingsBase(
+					this.worldScale,
+					this.terrestrialHeightScale,
+					this.oceanicHeightScale,
+					this.heightOffset,
+					this.seaLevel,
+					this.spawnLatitude,
+					this.spawnLongitude,
+					this.minAltitude,
+					this.maxAltitude,
+					this.cinematicMode,
+					this.caveCarvers,
+					this.largeCaves,
+					this.canyonCarvers,
+					this.aquifers,
+					this.dripstone,
+					this.deepDark,
+					this.oreDistribution,
+					enabled,
+					this.distantHorizonsRenderMode,
+					this.geodes
 			);
 		}
 
@@ -430,6 +474,7 @@ public record EarthGeneratorSettings(
 					this.dripstone,
 					this.deepDark,
 					this.oreDistribution,
+					this.distantHorizonsWaterResolver,
 					renderMode,
 					this.geodes
 			);
@@ -473,6 +518,7 @@ public record EarthGeneratorSettings(
 					DEFAULT.addAncientCities(),
 					DEFAULT.addTrialChambers(),
 					DEFAULT.addTrailRuins(),
+					this.distantHorizonsWaterResolver,
 					this.distantHorizonsRenderMode
 			);
 		}
@@ -503,6 +549,10 @@ public record EarthGeneratorSettings(
 			DistantHorizonsRenderMode renderMode
 	) {
 		return settings.withDistantHorizonsRenderMode(Objects.requireNonNull(renderMode, "renderMode"));
+	}
+
+	private static SettingsBase applyDistantHorizonsWaterResolver(SettingsBase settings, Boolean enabled) {
+		return settings.withDistantHorizonsWaterResolver(Objects.requireNonNull(enabled, "distantHorizonsWaterResolver").booleanValue());
 	}
 
 	private record StructureSettings(
@@ -583,6 +633,7 @@ public record EarthGeneratorSettings(
 				structures.addAncientCities(),
 				structures.addTrialChambers(),
 				this.addTrailRuins,
+				this.distantHorizonsWaterResolver,
 				this.distantHorizonsRenderMode
 		);
 	}
@@ -629,6 +680,7 @@ public record EarthGeneratorSettings(
 				this.addAncientCities,
 				this.addTrialChambers,
 				addTrailRuins,
+				this.distantHorizonsWaterResolver,
 				this.distantHorizonsRenderMode
 		);
 	}

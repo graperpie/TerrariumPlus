@@ -69,9 +69,12 @@ import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.RandomSupport;
 import net.minecraft.world.level.levelgen.WorldgenRandom;
 import net.minecraft.world.level.levelgen.blending.Blender;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
+import net.minecraft.world.level.levelgen.structure.StructurePiece;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
+import net.minecraft.world.level.levelgen.structure.TerrainAdjustment;
 import net.minecraft.world.level.levelgen.structure.BuiltinStructures;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
@@ -118,8 +121,7 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 			Blocks.WHITE_TERRACOTTA.defaultBlockState()
 	};
 	private static final int CINEMATIC_MAX_WATER_DEPTH = 16;
-	private static final int LOD_MIN_WATER_DEPTH = 5;
-	private static final int LOD_MIN_OCEAN_DEPTH = 10;
+	private static final int LOD_MIN_WATER_DEPTH = 8;
 	private static final int CARVER_RANGE = 8;
 	private static final int NOISE_CAVE_MIN_ROOF = 8;
 	private static final int NOISE_CAVE_MAX_DEPTH = 96;
@@ -399,9 +401,6 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 		int[] terrainSurfaces = new int[16 * 16];
 		int[] waterSurfaces = new int[16 * 16];
 		boolean[] waterFlags = new boolean[16 * 16];
-		int[] slopeDiffs = new int[16 * 16];
-		@SuppressWarnings("unchecked")
-		Holder<Biome>[] biomeCache = (Holder<Biome>[]) new Holder[16 * 16];
 
 		int chunkMinX = pos.getMinBlockX();
 		int chunkMinZ = pos.getMinBlockZ();
@@ -429,7 +428,37 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 				terrainSurfaces[index] = surface;
 				waterSurfaces[index] = column.waterSurface();
 				waterFlags[index] = column.hasWater();
-				slopeDiffs[index] = sampleSlopeDiffCached(heightGrid, gridSize, step, gridIndex, surface);
+			}
+		}
+
+		int[] structureCaps = resolveStructureSurfaceCaps(chunk, chunkMinY);
+		boolean[] structureAdjusted = null;
+		if (structureCaps != null) {
+			structureAdjusted = new boolean[16 * 16];
+			for (int i = 0; i < terrainSurfaces.length; i++) {
+				int cap = structureCaps[i];
+				if (cap != Integer.MAX_VALUE && terrainSurfaces[i] > cap) {
+					terrainSurfaces[i] = cap;
+					structureAdjusted[i] = true;
+				}
+			}
+		}
+
+		int[] slopeDiffs = new int[16 * 16];
+		@SuppressWarnings("unchecked")
+		Holder<Biome>[] biomeCache = (Holder<Biome>[]) new Holder[16 * 16];
+		for (int localX = 0; localX < 16; localX++) {
+			int worldX = chunkMinX + localX;
+			for (int localZ = 0; localZ < 16; localZ++) {
+				int worldZ = chunkMinZ + localZ;
+				int index = localZ * 16 + localX;
+				int surface = terrainSurfaces[index];
+				int gridIndex = (localZ + step) * gridSize + (localX + step);
+				int slopeDiff = sampleSlopeDiffCached(heightGrid, gridSize, step, gridIndex, surface);
+				if (structureAdjusted != null && structureAdjusted[index]) {
+					slopeDiff = 0;
+				}
+				slopeDiffs[index] = slopeDiff;
 				biomeCache[index] = this.biomeSource.getNoiseBiome(
 						QuartPos.fromBlock(worldX),
 						QuartPos.fromBlock(surface),
@@ -506,9 +535,6 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 		int[] waterSurfaces = new int[16 * 16];
 		boolean[] waterFlags = new boolean[16 * 16];
 		int[] cinematicSurfaces = new int[16 * 16];
-		int[] slopeDiffs = new int[16 * 16];
-		@SuppressWarnings("unchecked")
-		Holder<Biome>[] biomeCache = (Holder<Biome>[]) new Holder[16 * 16];
 
 		int chunkMinX = pos.getMinBlockX();
 		int chunkMinZ = pos.getMinBlockZ();
@@ -540,7 +566,37 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 				waterSurfaces[index] = waterSurface;
 				waterFlags[index] = hasWater;
 				cinematicSurfaces[index] = surface;
-				slopeDiffs[index] = sampleSlopeDiffCached(heightGrid, gridSize, step, gridIndex, surface);
+			}
+		}
+
+		int[] structureCaps = resolveStructureSurfaceCaps(chunk, chunkMinY);
+		boolean[] structureAdjusted = null;
+		if (structureCaps != null) {
+			structureAdjusted = new boolean[16 * 16];
+			for (int i = 0; i < cinematicSurfaces.length; i++) {
+				int cap = structureCaps[i];
+				if (cap != Integer.MAX_VALUE && cinematicSurfaces[i] > cap) {
+					cinematicSurfaces[i] = cap;
+					structureAdjusted[i] = true;
+				}
+			}
+		}
+
+		int[] slopeDiffs = new int[16 * 16];
+		@SuppressWarnings("unchecked")
+		Holder<Biome>[] biomeCache = (Holder<Biome>[]) new Holder[16 * 16];
+		for (int localX = 0; localX < 16; localX++) {
+			int worldX = chunkMinX + localX;
+			for (int localZ = 0; localZ < 16; localZ++) {
+				int worldZ = chunkMinZ + localZ;
+				int index = localZ * 16 + localX;
+				int surface = cinematicSurfaces[index];
+				int gridIndex = (localZ + step) * gridSize + (localX + step);
+				int slopeDiff = sampleSlopeDiffCached(heightGrid, gridSize, step, gridIndex, surface);
+				if (structureAdjusted != null && structureAdjusted[index]) {
+					slopeDiff = 0;
+				}
+				slopeDiffs[index] = slopeDiff;
 				biomeCache[index] = this.biomeSource.getNoiseBiome(
 						QuartPos.fromBlock(worldX),
 						QuartPos.fromBlock(surface),
@@ -595,6 +651,58 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 		}
 
 		return Objects.requireNonNull(CompletableFuture.<ChunkAccess>completedFuture(chunk), "completedFuture");
+	}
+
+	private int[] resolveStructureSurfaceCaps(ChunkAccess chunk, int minY) {
+		Map<Structure, StructureStart> starts = chunk.getAllStarts();
+		if (starts.isEmpty()) {
+			return null;
+		}
+		int[] caps = new int[16 * 16];
+		Arrays.fill(caps, Integer.MAX_VALUE);
+		boolean touched = false;
+		ChunkPos pos = chunk.getPos();
+		int chunkMinX = pos.getMinBlockX();
+		int chunkMinZ = pos.getMinBlockZ();
+		int chunkMaxX = chunkMinX + 15;
+		int chunkMaxZ = chunkMinZ + 15;
+
+		for (StructureStart start : starts.values()) {
+			if (start == null || !start.isValid()) {
+				continue;
+			}
+			Structure structure = start.getStructure();
+			if (!shouldApplyStructureTerrainAdjustment(structure.terrainAdaptation())) {
+				continue;
+			}
+			for (StructurePiece piece : start.getPieces()) {
+				BoundingBox box = piece.getBoundingBox();
+				if (!box.intersects(chunkMinX, chunkMinZ, chunkMaxX, chunkMaxZ)) {
+					continue;
+				}
+				int minX = Math.max(chunkMinX, box.minX());
+				int maxX = Math.min(chunkMaxX, box.maxX());
+				int minZ = Math.max(chunkMinZ, box.minZ());
+				int maxZ = Math.min(chunkMaxZ, box.maxZ());
+				int cap = Math.max(minY, box.minY() - 1);
+				for (int z = minZ; z <= maxZ; z++) {
+					int row = (z - chunkMinZ) * 16;
+					for (int x = minX; x <= maxX; x++) {
+						int index = row + (x - chunkMinX);
+						if (cap < caps[index]) {
+							caps[index] = cap;
+						}
+					}
+				}
+				touched = true;
+			}
+		}
+
+		return touched ? caps : null;
+	}
+
+	private static boolean shouldApplyStructureTerrainAdjustment(TerrainAdjustment adjustment) {
+		return adjustment == TerrainAdjustment.BEARD_THIN || adjustment == TerrainAdjustment.BEARD_BOX;
 	}
 
 	@Override
@@ -997,15 +1105,42 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 		}
 		int waterSurface = Math.max(surface + 1, this.seaLevel);
 		boolean isOcean = coverClass == ESA_NO_DATA;
-		int minDepth = isOcean ? LOD_MIN_OCEAN_DEPTH : LOD_MIN_WATER_DEPTH;
-		int targetSurface = waterSurface - Math.max(1, minDepth);
-		if (surface > targetSurface) {
-			surface = targetSurface;
-		}
-		if (surface >= waterSurface) {
-			surface = waterSurface - 1;
+		if (!isOcean) {
+			int targetSurface = waterSurface - Math.max(1, LOD_MIN_WATER_DEPTH);
+			if (surface > targetSurface) {
+				surface = targetSurface;
+			}
+			if (surface >= waterSurface) {
+				surface = waterSurface - 1;
+			}
 		}
 		return new WaterSurfaceResolver.WaterColumnData(true, isOcean, surface, waterSurface);
+	}
+
+	public WaterSurfaceResolver.WaterColumnData resolveLodWaterColumn(
+			int worldX,
+			int worldZ,
+			int coverClass,
+			boolean useDetailedResolver
+	) {
+		if (!useDetailedResolver) {
+			return resolveLodWaterColumn(worldX, worldZ, coverClass);
+		}
+		if (coverClass == ESA_MANGROVES) {
+			int surface = sampleSurfaceHeight(worldX, worldZ);
+			int waterSurface = resolveMangroveWaterSurface(worldX, worldZ, this.seaLevel);
+			boolean hasWater = waterSurface > surface;
+			return new WaterSurfaceResolver.WaterColumnData(hasWater, false, surface, waterSurface);
+		}
+		if (coverClass != ESA_WATER && coverClass != ESA_NO_DATA) {
+			int surface = sampleSurfaceHeight(worldX, worldZ);
+			return new WaterSurfaceResolver.WaterColumnData(false, false, surface, surface);
+		}
+		return this.waterResolver.resolveColumnData(worldX, worldZ, coverClass);
+	}
+
+	public void prefetchLodWaterRegions(int minBlockX, int minBlockZ, int maxBlockX, int maxBlockZ) {
+		this.waterResolver.prefetchRegionsForArea(minBlockX, minBlockZ, maxBlockX, maxBlockZ);
 	}
 
 	public @NonNull BlockState resolveBadlandsBandBlock(int worldX, int worldZ, int y) {

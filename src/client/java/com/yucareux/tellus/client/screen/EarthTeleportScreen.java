@@ -55,7 +55,6 @@ public class EarthTeleportScreen extends Screen {
 
 		this.addRenderableOnly(this.mapWidget);
 		this.addRenderableWidget(this.searchWidget);
-		this.addWidget(this.mapWidget);
 
 		int buttonY = this.height - 28;
 		this.addRenderableWidget(Button.builder(Component.translatable("gui.earth.teleport"), button -> {
@@ -65,6 +64,8 @@ public class EarthTeleportScreen extends Screen {
 		this.addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), button -> {
 			closeScreen();
 		}).bounds(this.width / 2 + 4, buttonY, 150, 20).build());
+
+		this.addWidget(this.mapWidget);
 	}
 
 	@Override

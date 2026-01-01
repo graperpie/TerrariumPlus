@@ -151,6 +151,10 @@ public final class WaterSurfaceResolver {
 
 	public WaterColumnData resolveColumnData(int blockX, int blockZ) {
 		int coverClass = this.landCoverSource.sampleCoverClass(blockX, blockZ, this.settings.worldScale());
+		return resolveColumnData(blockX, blockZ, coverClass);
+	}
+
+	public WaterColumnData resolveColumnData(int blockX, int blockZ, int coverClass) {
 		if (!isWaterClass(coverClass)) {
 			int surface = sampleSurfaceHeight(blockX, blockZ);
 			return new WaterColumnData(false, false, surface, surface);
@@ -166,6 +170,22 @@ public final class WaterSurfaceResolver {
 		for (int dz = -clampedRadius; dz <= clampedRadius; dz++) {
 			for (int dx = -clampedRadius; dx <= clampedRadius; dx++) {
 				prefetchRegion(regionX + dx, regionZ + dz);
+			}
+		}
+	}
+
+	public void prefetchRegionsForArea(int minBlockX, int minBlockZ, int maxBlockX, int maxBlockZ) {
+		int minX = Math.min(minBlockX, maxBlockX);
+		int maxX = Math.max(minBlockX, maxBlockX);
+		int minZ = Math.min(minBlockZ, maxBlockZ);
+		int maxZ = Math.max(minBlockZ, maxBlockZ);
+		int minRegionX = regionCoord(minX);
+		int maxRegionX = regionCoord(maxX);
+		int minRegionZ = regionCoord(minZ);
+		int maxRegionZ = regionCoord(maxZ);
+		for (int rz = minRegionZ; rz <= maxRegionZ; rz++) {
+			for (int rx = minRegionX; rx <= maxRegionX; rx++) {
+				prefetchRegion(rx, rz);
 			}
 		}
 	}
@@ -454,15 +474,16 @@ public final class WaterSurfaceResolver {
 		}
 
 		int[] waterDistanceCost = scratch.waterDistanceCost;
+		int maxDistanceBlocks = Math.min(this.maxDistanceToShore, this.regionMargin);
 		computeWeightedDistance(
 				waterDistanceCost,
 				waterMask,
 				shoreWater,
 				gridSize,
-				this.maxDistanceToShore,
+				maxDistanceBlocks,
 				DIST_COST_CARDINAL
 		);
-		int maxDistanceCost = this.maxDistanceToShore * DIST_COST_CARDINAL;
+		int maxDistanceCost = maxDistanceBlocks * DIST_COST_CARDINAL;
 
 		for (int i = 0; i < componentCount; i++) {
 			ComponentData component = components[i];
@@ -711,15 +732,16 @@ public final class WaterSurfaceResolver {
 		}
 
 		int[] waterDistanceCost = scratch.waterDistanceCost;
+		int maxDistanceBlocks = Math.min(this.maxDistanceToShore, this.regionMargin);
 		computeWeightedDistance(
 				waterDistanceCost,
 				waterMask,
 				shoreWater,
 				gridSize,
-				this.maxDistanceToShore,
+				maxDistanceBlocks,
 				DIST_COST_CARDINAL
 		);
-		int maxDistanceCost = this.maxDistanceToShore * DIST_COST_CARDINAL;
+		int maxDistanceCost = maxDistanceBlocks * DIST_COST_CARDINAL;
 
 		for (int i = 0; i < componentCount; i++) {
 			ComponentData component = components[i];
@@ -1066,8 +1088,11 @@ public final class WaterSurfaceResolver {
 			int gridSize
 	) {
 		int minSmoothCost = this.shorelineMediumDistance * DIST_COST_CARDINAL;
+		RegionScratch scratch = REGION_SCRATCH.get();
+		scratch.ensureCapacity(terrainSurface.length);
+		int[] smoothed = scratch.smoothedTerrain;
 		for (int pass = 0; pass < LAKE_SMOOTH_PASSES; pass++) {
-			int[] smoothed = Arrays.copyOf(terrainSurface, terrainSurface.length);
+			System.arraycopy(terrainSurface, 0, smoothed, 0, terrainSurface.length);
 			for (int i = 0; i < componentCount; i++) {
 				ComponentData component = components[i];
 				if (component.isOcean || component.isRiver) {
@@ -1420,6 +1445,7 @@ public final class WaterSurfaceResolver {
 		private ComponentData[] components;
 		private int[] waterSurface;
 		private int[] terrainSurface;
+		private int[] smoothedTerrain;
 		private byte[] waterFlags;
 		private boolean[] inlandWaterMask;
 		private boolean[] oceanComponentMask;
@@ -1450,6 +1476,7 @@ public final class WaterSurfaceResolver {
 			this.components = new ComponentData[size];
 			this.waterSurface = new int[size];
 			this.terrainSurface = new int[size];
+			this.smoothedTerrain = new int[size];
 			this.waterFlags = new byte[size];
 			this.inlandWaterMask = new boolean[size];
 			this.oceanComponentMask = new boolean[size];

@@ -24,6 +24,7 @@ public class SlippyMapWidget extends AbstractWidget {
 
 	private boolean mouseDown;
 	private boolean mouseDragged;
+	private int attributionBottomPadding;
 
 	public SlippyMapWidget(int x, int y, int width, int height) {
 		super(x, y, width, height, Component.empty());
@@ -37,6 +38,10 @@ public class SlippyMapWidget extends AbstractWidget {
 	public <T extends MapComponent> T addComponent(T component) {
 		this.components.add(component);
 		return component;
+	}
+
+	public void setAttributionBottomPadding(int padding) {
+		this.attributionBottomPadding = Math.max(0, padding);
 	}
 
 	@Override
@@ -70,7 +75,7 @@ public class SlippyMapWidget extends AbstractWidget {
 		graphics.disableScissor();
 
 		int maxX = this.getX() + this.width - 4;
-		int maxY = this.getY() + this.height - 4;
+		int maxY = this.getY() + this.height - 4 - this.attributionBottomPadding;
 		int attributionWidth = Minecraft.getInstance().font.width(ATTRIBUTION) + 20;
 		int attributionOriginX = maxX - attributionWidth;
 		int attributionOriginY = maxY - Minecraft.getInstance().font.lineHeight - 4;

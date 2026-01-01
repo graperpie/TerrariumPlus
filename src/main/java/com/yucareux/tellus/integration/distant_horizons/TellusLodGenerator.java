@@ -47,12 +47,13 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 	private static final int CANOPY_SALT = 0x6D2B79F5;
 	private static final int CANOPY_VARIANT_SALT = 0x7F4A7C15;
 	private static final int WATER_VEG_SALT = 0x3C6EF35F;
-	private static final int WATER_VEG_MIN_DEPTH = 2;
+	private static final int WATER_VEG_MIN_DEPTH = 1;
 	private static final int WATER_VEG_MAX_HEIGHT = 4;
 	private static final int BADLANDS_LOD_BAND_DEPTH = 16;
 	private static final int BADLANDS_LOD_BAND_HEIGHT = 3;
 	private static final int BADLANDS_LOD_SLOPE_DIFF = 3;
 	private static final int LOD_SLOPE_STEP = 4;
+	private static final int LOD_WATER_RESOLVER_MAX_DETAIL = 6;
 	private final IDhApiLevelWrapper levelWrapper;
 	private final EarthChunkGenerator generator;
 	private final EarthBiomeSource biomeSource;
@@ -102,6 +103,8 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 		final int lodSizePoints = output.getWidthInDataColumns();
 		final int cellSize = 1 << detailLevel;
 		final int cellOffset = cellSize >> 1;
+		final boolean useDetailedWater = generator.settings().distantHorizonsWaterResolver()
+				&& detailLevel <= LOD_WATER_RESOLVER_MAX_DETAIL;
 
 		final int baseX = SectionPos.sectionToBlockCoord(chunkPosMinX);
 		final int baseZ = SectionPos.sectionToBlockCoord(chunkPosMinZ);
@@ -114,6 +117,7 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 		final List<DhApiTerrainDataPoint> columnDataPoints = new ArrayList<>();
 		final int area = lodSizePoints * lodSizePoints;
 		final int[] surfaceYs = new int[area];
+		final int[] vegetationSurfaceYs = new int[area];
 		final int[] waterSurfaces = new int[area];
 		final boolean[] underwaterFlags = new boolean[area];
 		final int[] coverClasses = new int[area];
@@ -127,11 +131,19 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 				final int index = localZ * lodSizePoints + localX;
 				final int coverClass = generator.sampleCoverClass(worldX, worldZ);
 				final WaterSurfaceResolver.WaterColumnData waterColumn =
-						generator.resolveLodWaterColumn(worldX, worldZ, coverClass);
+						generator.resolveLodWaterColumn(worldX, worldZ, coverClass, useDetailedWater);
+				final WaterSurfaceResolver.WaterColumnData fastColumn = useDetailedWater
+						? generator.resolveLodWaterColumn(worldX, worldZ, coverClass)
+						: waterColumn;
 				final int surfaceY = Mth.clamp(waterColumn.terrainSurface(), minY, maxY - 1);
 				final int waterSurface = Mth.clamp(waterColumn.waterSurface(), minY, maxY - 1);
 				final boolean underwater = waterColumn.hasWater() && waterSurface > surfaceY;
+				final boolean isOcean = waterColumn.isOcean() || fastColumn.isOcean();
+				final int vegetationSurface = isOcean
+						? fastColumn.terrainSurface()
+						: surfaceY;
 				surfaceYs[index] = surfaceY;
+				vegetationSurfaceYs[index] = Mth.clamp(vegetationSurface, minY, maxY - 1);
 				waterSurfaces[index] = waterSurface;
 				underwaterFlags[index] = underwater;
 				coverClasses[index] = coverClass;
@@ -145,6 +157,7 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 				final int worldX = baseX + localX * cellSize + cellOffset;
 				final int index = localZ * lodSizePoints + localX;
 				final int surfaceY = surfaceYs[index];
+				final int vegetationSurfaceY = vegetationSurfaceYs[index];
 				final int waterSurface = waterSurfaces[index];
 				final boolean underwater = underwaterFlags[index];
 				final int coverClass = coverClasses[index];
@@ -236,7 +249,7 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 				if (underwater) {
 					final int waterTop = toLayerTop(waterSurface, minY, absoluteTop);
 					if (waterTop > lastLayerTop) {
-						final int waterDepth = waterSurface - surfaceY;
+						final int waterDepth = waterSurface - vegetationSurfaceY;
 						final WaterVegetationColumn vegetation = resolveWaterVegetationColumn(
 								biomeHolder,
 								worldX,
@@ -244,20 +257,23 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 								waterDepth
 						);
 						if (vegetation != null) {
-							final int vegBase = lastLayerTop;
-							final int vegTop = Math.min(waterTop, vegBase + vegetation.height);
-							if (vegTop > vegBase) {
+							int vegetationBaseTop = toLayerTop(vegetationSurfaceY, minY, absoluteTop);
+							vegetationBaseTop = Mth.clamp(vegetationBaseTop, lastLayerTop, waterTop);
+							if (vegetationBaseTop > lastLayerTop) {
+								columnDataPoints.add(
+										DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, vegetationBaseTop, waterBlock, biome)
+								);
+								lastLayerTop = vegetationBaseTop;
+							}
+							final int vegTop = Math.min(waterTop, lastLayerTop + vegetation.height);
+							if (vegTop > lastLayerTop) {
 								final IDhApiBlockStateWrapper vegBlock = wrappers.getBlockState(vegetation.blockState);
 								columnDataPoints.add(
-										DhApiTerrainDataPoint.create((byte) 0, 0, CANOPY_MAX_LIGHT, vegBase, vegTop, vegBlock, biome)
+										DhApiTerrainDataPoint.create((byte) 0, 0, CANOPY_MAX_LIGHT, lastLayerTop, vegTop, vegBlock, biome)
 								);
-								if (waterTop > vegTop) {
-									columnDataPoints.add(
-											DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, vegTop, waterTop, waterBlock, biome)
-									);
-								}
-								lastLayerTop = waterTop;
-							} else {
+								lastLayerTop = vegTop;
+							}
+							if (waterTop > lastLayerTop) {
 								columnDataPoints.add(
 										DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, waterTop, waterBlock, biome)
 								);
@@ -312,6 +328,8 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 		}
 		final int cellSize = 1 << detailLevel;
 		final int cellOffset = cellSize >> 1;
+		final boolean useDetailedWater = generator.settings().distantHorizonsWaterResolver()
+				&& detailLevel <= LOD_WATER_RESOLVER_MAX_DETAIL;
 		final int baseX = SectionPos.sectionToBlockCoord(chunkPosMinX);
 		final int baseZ = SectionPos.sectionToBlockCoord(chunkPosMinZ);
 		final int minBlockX = baseX + cellOffset;
@@ -324,6 +342,9 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 		prefetchAtBlock(maxBlockX, minBlockZ);
 		prefetchAtBlock(maxBlockX, maxBlockZ);
 		prefetchAtBlock(Math.floorDiv(minBlockX + maxBlockX, 2), Math.floorDiv(minBlockZ + maxBlockZ, 2));
+		if (useDetailedWater) {
+			generator.prefetchLodWaterRegions(minBlockX, minBlockZ, maxBlockX, maxBlockZ);
+		}
 	}
 
 	private void prefetchAtBlock(final int blockX, final int blockZ) {

@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.yucareux.tellus.world.data.source.Geocoder.Suggestion;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -16,12 +17,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class NominatimGeocoder implements Geocoder {
-	private static final String SEARCH_URL = "https://nominatim.openstreetmap.org/search?format=json&q=%s";
+	private static final String SEARCH_URL = "https://nominatim.openstreetmap.org/search?format=json&limit=%d&q=%s";
+	private static final int GET_LIMIT = 1;
+	private static final int SUGGEST_LIMIT = 5;
 
 	@Override
 	public double[] get(String place) {
 		try {
-			JsonElement result = this.query(place);
+			JsonElement result = this.query(place, GET_LIMIT);
 			if (result.isJsonArray()) {
 				JsonArray array = result.getAsJsonArray();
 				if (!array.isEmpty()) {
@@ -38,28 +41,35 @@ public class NominatimGeocoder implements Geocoder {
 	}
 
 	@Override
-	public String[] suggest(String place) {
+	public Suggestion[] suggest(String place) {
 		try {
-			JsonElement result = this.query(place);
+			JsonElement result = this.query(place, SUGGEST_LIMIT);
 			if (result.isJsonArray()) {
 				JsonArray array = result.getAsJsonArray();
-				List<String> suggestions = new ArrayList<>();
+				List<Suggestion> suggestions = new ArrayList<>();
 				for (JsonElement element : array) {
 					if (element.isJsonObject()) {
-						suggestions.add(element.getAsJsonObject().get("display_name").getAsString());
+						JsonObject object = element.getAsJsonObject();
+						if (!object.has("display_name") || !object.has("lat") || !object.has("lon")) {
+							continue;
+						}
+						String name = object.get("display_name").getAsString();
+						double lat = object.get("lat").getAsDouble();
+						double lon = object.get("lon").getAsDouble();
+						suggestions.add(new Suggestion(name, lat, lon));
 					}
 				}
-				return suggestions.toArray(new String[0]);
+				return suggestions.toArray(new Suggestion[0]);
 			}
 		} catch (IOException e) {
 			Tellus.LOGGER.error("Failed to suggest places for: {}", place, e);
 		}
-		return new String[0];
+		return new Suggestion[0];
 	}
 
-	private JsonElement query(String place) throws IOException {
+	private JsonElement query(String place, int limit) throws IOException {
 		String encodedPlace = URLEncoder.encode(place, StandardCharsets.UTF_8);
-		URI uri = URI.create(String.format(SEARCH_URL, encodedPlace));
+		URI uri = URI.create(String.format(SEARCH_URL, limit, encodedPlace));
 		HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
 		connection.setRequestProperty("User-Agent", "Tellus/2.0.0 (Minecraft Mod)");
 		connection.setConnectTimeout(5000);
