@@ -46,10 +46,9 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 	private static final int CANOPY_DENSITY_MAX = 100;
 	private static final int CANOPY_SALT = 0x6D2B79F5;
 	private static final int CANOPY_VARIANT_SALT = 0x7F4A7C15;
-	private static final int WATER_VEG_GRID_SIZE = 10;
-	private static final int WATER_VEG_GRID_SCALE_MAX = 10;
 	private static final int WATER_VEG_SALT = 0x3C6EF35F;
-	private static final int WATER_VEG_SURFACE_OFFSET = 0;
+	private static final int WATER_VEG_MIN_DEPTH = 2;
+	private static final int WATER_VEG_MAX_HEIGHT = 4;
 	private static final int BADLANDS_LOD_BAND_DEPTH = 16;
 	private static final int BADLANDS_LOD_BAND_HEIGHT = 3;
 	private static final int BADLANDS_LOD_SLOPE_DIFF = 3;
@@ -242,24 +241,27 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 								biomeHolder,
 								worldX,
 								worldZ,
-								detailLevel,
 								waterDepth
 						);
 						if (vegetation != null) {
-							final int vegTop = Math.max(lastLayerTop, waterTop - WATER_VEG_SURFACE_OFFSET);
-							final int vegBase = Math.max(lastLayerTop, vegTop - vegetation.height);
-							if (vegBase > lastLayerTop) {
-								columnDataPoints.add(
-										DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, vegBase, waterBlock, biome)
-								);
-								lastLayerTop = vegBase;
-							}
-							if (vegTop > lastLayerTop) {
+							final int vegBase = lastLayerTop;
+							final int vegTop = Math.min(waterTop, vegBase + vegetation.height);
+							if (vegTop > vegBase) {
 								final IDhApiBlockStateWrapper vegBlock = wrappers.getBlockState(vegetation.blockState);
 								columnDataPoints.add(
-										DhApiTerrainDataPoint.create((byte) 0, 0, CANOPY_MAX_LIGHT, lastLayerTop, vegTop, vegBlock, biome)
+										DhApiTerrainDataPoint.create((byte) 0, 0, CANOPY_MAX_LIGHT, vegBase, vegTop, vegBlock, biome)
 								);
-								lastLayerTop = vegTop;
+								if (waterTop > vegTop) {
+									columnDataPoints.add(
+											DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, vegTop, waterTop, waterBlock, biome)
+									);
+								}
+								lastLayerTop = waterTop;
+							} else {
+								columnDataPoints.add(
+										DhApiTerrainDataPoint.create((byte) 0, 0, SKY_LIGHT, lastLayerTop, waterTop, waterBlock, biome)
+								);
+								lastLayerTop = waterTop;
 							}
 						} else {
 							columnDataPoints.add(
@@ -550,61 +552,28 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 			final Holder<Biome> biome,
 			final int worldX,
 			final int worldZ,
-			final byte detailLevel,
 			final int waterDepth
 	) {
-		if (waterDepth < 2) {
+		if (waterDepth < WATER_VEG_MIN_DEPTH) {
 			return null;
 		}
 		final int chance = waterVegetationChancePercent(biome);
 		if (chance <= 0) {
 			return null;
 		}
-
-		final int gridSize = waterVegetationGridSize(detailLevel);
-		final int cellX = Math.floorDiv(worldX, gridSize);
-		final int cellZ = Math.floorDiv(worldZ, gridSize);
-
-		int bestDist = Integer.MAX_VALUE;
-		int bestRadius = 0;
-		int bestHash = 0;
-
-		for (int dz = -1; dz <= 1; dz++) {
-			final int testCellZ = cellZ + dz;
-			for (int dx = -1; dx <= 1; dx++) {
-				final int testCellX = cellX + dx;
-				final int centerHash = mixHash(testCellX, testCellZ, WATER_VEG_SALT);
-				if (!hasClusterCenter(centerHash, chance)) {
-					continue;
-				}
-
-				final int offsetX = centerOffset(centerHash, gridSize);
-				final int offsetZ = centerOffset(centerHash >>> 8, gridSize);
-				final int centerX = testCellX * gridSize + offsetX;
-				final int centerZ = testCellZ * gridSize + offsetZ;
-				final int dist = Math.abs(worldX - centerX) + Math.abs(worldZ - centerZ);
-				final int radius = waterVegetationRadius(biome, centerHash, gridSize);
-
-				if (dist <= radius && dist < bestDist) {
-					bestDist = dist;
-					bestRadius = radius;
-					bestHash = centerHash;
-				}
-			}
-		}
-
-		if (bestDist == Integer.MAX_VALUE) {
+		final int hash = mixHash(worldX, worldZ, WATER_VEG_SALT);
+		if (!hasClusterCenter(hash, chance)) {
 			return null;
 		}
-
-		final boolean kelp = shouldUseKelp(biome, waterDepth, bestHash);
+		final boolean kelp = shouldUseKelp(biome, waterDepth, hash);
 		final BlockState blockState = kelp
 				? Blocks.KELP_PLANT.defaultBlockState()
 				: Blocks.SEAGRASS.defaultBlockState();
-		final int maxHeight = Math.max(1, waterDepth - 1);
-		int height = kelp
-				? waterKelpHeight(waterDepth, bestHash, bestRadius, bestDist)
-				: waterSeagrassHeight(waterDepth, bestHash);
+		final int maxHeight = Math.min(WATER_VEG_MAX_HEIGHT, Math.max(1, waterDepth - 1));
+		if (maxHeight <= 0) {
+			return null;
+		}
+		int height = 1 + ((hash >>> 12) & 0x3);
 		height = Math.min(height, maxHeight);
 		if (height <= 0) {
 			return null;
@@ -614,91 +583,46 @@ public final class TellusLodGenerator implements IDhApiWorldGenerator {
 
 	private static int waterVegetationChancePercent(final Holder<Biome> biome) {
 		if (biome.is(Biomes.WARM_OCEAN) || biome.is(Biomes.LUKEWARM_OCEAN)) {
-			return 70;
+			return 19;
 		}
 		if (biome.is(Biomes.DEEP_LUKEWARM_OCEAN)) {
-			return 65;
+			return 18;
 		}
 		if (biome.is(Biomes.MANGROVE_SWAMP)) {
-			return 60;
+			return 17;
 		}
 		if (biome.is(Biomes.SWAMP)) {
-			return 50;
+			return 14;
 		}
 		if (biome.is(BiomeTags.IS_OCEAN)) {
-			return 55;
+			return 15;
 		}
 		if (biome.is(BiomeTags.IS_RIVER)) {
-			return 45;
+			return 12;
 		}
-		return 0;
-	}
-
-	private static int waterVegetationGridSize(final byte detailLevel) {
-		final int scale = Math.min(WATER_VEG_GRID_SCALE_MAX, Math.max(0, detailLevel - 2));
-		return WATER_VEG_GRID_SIZE + (scale << 1);
-	}
-
-	private static int waterVegetationRadius(final Holder<Biome> biome, final int centerHash, final int gridSize) {
-		int baseRadius;
-		if (biome.is(Biomes.WARM_OCEAN) || biome.is(Biomes.LUKEWARM_OCEAN) || biome.is(Biomes.DEEP_LUKEWARM_OCEAN)) {
-			baseRadius = 4;
-		} else if (biome.is(BiomeTags.IS_OCEAN)) {
-			baseRadius = 3;
-		} else if (biome.is(BiomeTags.IS_RIVER)) {
-			baseRadius = 2;
-		} else {
-			baseRadius = 0;
-		}
-		if (baseRadius == 0) {
-			return 0;
-		}
-		int scaledRadius = Math.max(1, (baseRadius * gridSize) / WATER_VEG_GRID_SIZE);
-		scaledRadius = Math.min(scaledRadius, gridSize - 1);
-		return scaledRadius + ((centerHash >>> 16) & 1);
+		return 10;
 	}
 
 	private static boolean shouldUseKelp(final Holder<Biome> biome, final int waterDepth, final int centerHash) {
 		if (biome.is(BiomeTags.IS_RIVER)) {
 			return false;
 		}
-		if (waterDepth < 4) {
+		if (waterDepth < 6) {
 			return false;
 		}
 		final int chance;
 		if (biome.is(Biomes.WARM_OCEAN)) {
-			chance = 20;
+			chance = 15;
 		} else if (biome.is(Biomes.LUKEWARM_OCEAN) || biome.is(Biomes.DEEP_LUKEWARM_OCEAN)) {
-			chance = 35;
+			chance = 25;
 		} else if (biome.is(BiomeTags.IS_OCEAN)) {
-			chance = 50;
+			chance = 35;
 		} else {
 			chance = 0;
 		}
 		final int roll = (centerHash >>> 18) & 0xFF;
 		final int threshold = (chance * 255) / 100;
 		return roll < threshold;
-	}
-
-	private static int waterKelpHeight(
-			final int waterDepth,
-			final int centerHash,
-			final int radius,
-			final int dist
-	) {
-		int height = 2 + ((centerHash >>> 15) & 0x3);
-		if (waterDepth > 6) {
-			height++;
-		}
-		if (dist >= Math.max(1, radius - 1)) {
-			height = Math.max(2, height - 1);
-		}
-		return Math.min(height, waterDepth - 1);
-	}
-
-	private static int waterSeagrassHeight(final int waterDepth, final int centerHash) {
-		int height = ((centerHash >>> 14) & 1) == 0 ? 1 : 2;
-		return Math.min(height, Math.max(1, waterDepth - 1));
 	}
 
 	private static int centerOffset(final int hash, final int gridSize) {

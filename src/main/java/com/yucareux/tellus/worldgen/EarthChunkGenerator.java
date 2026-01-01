@@ -118,6 +118,8 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 			Blocks.WHITE_TERRACOTTA.defaultBlockState()
 	};
 	private static final int CINEMATIC_MAX_WATER_DEPTH = 16;
+	private static final int LOD_MIN_WATER_DEPTH = 5;
+	private static final int LOD_MIN_OCEAN_DEPTH = 10;
 	private static final int CARVER_RANGE = 8;
 	private static final int NOISE_CAVE_MIN_ROOF = 8;
 	private static final int NOISE_CAVE_MAX_DEPTH = 96;
@@ -995,6 +997,14 @@ public final class EarthChunkGenerator extends ChunkGenerator {
 		}
 		int waterSurface = Math.max(surface + 1, this.seaLevel);
 		boolean isOcean = coverClass == ESA_NO_DATA;
+		int minDepth = isOcean ? LOD_MIN_OCEAN_DEPTH : LOD_MIN_WATER_DEPTH;
+		int targetSurface = waterSurface - Math.max(1, minDepth);
+		if (surface > targetSurface) {
+			surface = targetSurface;
+		}
+		if (surface >= waterSurface) {
+			surface = waterSurface - 1;
+		}
 		return new WaterSurfaceResolver.WaterColumnData(true, isOcean, surface, waterSurface);
 	}
 
